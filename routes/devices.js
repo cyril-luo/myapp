@@ -1,6 +1,8 @@
 var URL = require('url');
 var express = require('express');
 var sha1 = require('sha1');
+var redis = require('redis');
+var client = require('redis').createClient();
 var router = express.Router();
 
 function Device() {
@@ -16,6 +18,7 @@ function Device() {
 
 var pre_device = new Device();
 var next_device = new Device();
+var device = new Device();
 
 
 router.post('/getNonce', function(req, res, next) {//for browser test
@@ -44,6 +47,7 @@ router.post('/send', function(req, res, next) {
     res.send({follow: {result : pre_device.nonce}});
 });
 
+/*
 router.post('/check', function(req, res, next) {
     console.log("\ncheck is going...\n");
     var ret = 1;
@@ -70,7 +74,7 @@ router.post('/check', function(req, res, next) {
 console.log("\nret \n", ret);
         res.send({follow: {result : ret}});
 });
-
+*/
 
 //RSA 
 var NodeRSA = require('node-rsa');
@@ -110,6 +114,23 @@ var key = new NodeRSA('-----BEGIN RSA PRIVATE KEY-----\n'+
 */
 
 //PKCS#8
+var keydata =           '-----BEGIN PRIVATE KEY-----\n'+
+                      'MIICdQIBADANBgkqhkiG9w0BAQEFAASCAl8wggJbAgEAAoGBAKEPNyPD+taAXCfG\n'+
+                      '6dsqnv/h7zD9SZfHaOTqoQSfr23o3ZHWL8uZzINPXGv9PYAcY6Jc1DlXxbiIJpp4\n'+
+                      '1rCLtolpGG1XHW44f/ZTfvx+xwQRIQbxcOqWXQYJ8HX9OMojZqK1VLNc61GzyRiA\n'+
+                      'ZTvx/tWYM2BciWTeB2GfOH66gRDLAgMBAAECgYBp4qTvoJKynuT3SbDJY/XwaEtm\n'+
+                      'u768SF9P0GlXrtwYuDWjAVue0VhBI9WxMWZTaVafkcP8hxX4QZqPh84td0zjcq3j\n'+
+                      'DLOegAFJkIorGzq5FyK7ydBoU1TLjFV459c8dTZMTu+LgsOTD11/V/Jr4NJxIudo\n'+
+                      'MBQ3c4cHmOoYv4uzkQJBANR+7Fc3e6oZgqTOesqPSPqljbsdF9E4x4eDFuOecCkJ\n'+
+                      'DvVLOOoAzvtHfAiUp+H3fk4hXRpALiNBEHiIdhIuX2UCQQDCCHiPHFd4gC58yyCM\n'+
+                      '6Leqkmoa+6YpfRb3oxykLBXcWx7DtbX+ayKy5OQmnkEG+MW8XB8wAdiUl0/tb6cQ\n'+
+                      'FaRvAkBhvP94Hk0DMDinFVHlWYJ3xy4pongSA8vCyMj+aSGtvjzjFnZXK4gIjBjA\n'+
+                      '2Z9ekDfIOBBawqp2DLdGuX2VXz8BAkByMuIh+KBSv76cnEDwLhfLQJlKgEnvqTvX\n'+
+                      'TB0TUw8avlaBAXW34/5sI+NUB1hmbgyTK/T/IFcEPXpBWLGO+e3pAkAGWLpnH0Zh\n'+
+                      'Fae7oAqkMAd3xCNY6ec180tAe57hZ6kS+SYLKwb4gGzYaCxc22vMtYksXHtUeamo\n'+
+                      '1NMLzI2ZfUoX\n'+
+                      '-----END PRIVATE KEY-----';
+
 var key = new NodeRSA('-----BEGIN PRIVATE KEY-----\n'+
                       'MIICdQIBADANBgkqhkiG9w0BAQEFAASCAl8wggJbAgEAAoGBAKEPNyPD+taAXCfG\n'+
                       '6dsqnv/h7zD9SZfHaOTqoQSfr23o3ZHWL8uZzINPXGv9PYAcY6Jc1DlXxbiIJpp4\n'+
@@ -141,7 +162,7 @@ key.importKey({
 
 */
 
-router.get('/getRSA', function(req, res, next) {//for browser test
+router.get('/getRSAtest', function(req, res, next) {//for browser test
 
     console.log("\ncheck RSA is going...\n");
 
@@ -201,5 +222,89 @@ function strToHexCharCode(str) {
 　　}
 　　return hexCharCode.join("");
 }
+
+//add redis
+
+router.post('/sendDevice', function(req, res, next) {//
+    console.log("\nsendDevice is going...\n");
+    var body = req.body; 
+    nonce = Math.ceil(Math.random() * 1000000000000);
+    console.log('Real Devices serial:' + body.serial);
+    //check device exist
+    client.hexists("device table", body.serial, function (err, obj) {
+        if(err){
+            console.log('add Real Devices error!');
+            return false;
+        }
+        if(obj == 0){//device not exist
+            //add device serial first
+            client.hset("device table", body.serial, keydata, function (err) {
+            if(err){
+                console.log('add Real Devices error!');
+                return false;
+                }
+            });
+            console.log('add Real Devices!');
+            res.send({follow: {result : nonce}});
+        }
+        else{//device exist
+            console.log('already add Real Devices!');
+            res.send({follow: {result : nonce}});
+        }
+    });
+
+});
+
+router.post('/checkDevice', function(req, res, next) {//
+    console.log("\ncheck Device RSA is going...\n");
+
+    var ret = 1;
+    var body = req.body;
+    device.serial = body.serial;
+    device.nonce = body.nonce;
+    device.phash = body.phash;
+    //next_device.plain = body.plain;
+    //next_device.rsasign = body.rsasign;
+    //device exist
+    client.hexists("device table", device.serial, function (err, obj) {
+        if(err){
+            console.log('add Real Devices error!');
+            return false;
+        }
+        if(obj == 0){//device not exist
+            ret = 0;
+            console.log('Devices Serial not exist!');
+            res.send({follow: {result : ret}});
+        }
+        else{//device exist
+            //get pubkey
+              client.hexists("device table", device.serial, function (err, obj) {
+                    if(err){
+                        console.log('serch Devices error!');
+                        return false;
+                    }
+                    if(obj == null){
+                        console.log('No publickey error!');
+                        return false;
+                    }
+                    else{
+                        var keydata_radis = obj;
+                        var plain = key.decryptPublic(body.rsasign,'binary','base64');
+                        console.log('caclulate hash!');
+                            console.log("pre_device serial:" + device.serial
+                            + "\npre_device nonce:" + device.nonce
+                            + "\npre_device phash:" + device.phash);
+                        var hash = sha1(device.serial + device.nonce + device.phash);
+                        console.log("\nsign: " + hash);
+                        console.log("\nplain: " + plain);
+                        if(hash != plain)
+                            ret = 0;
+                        //generate phash and compare them
+                        res.send({follow: {result : ret}});
+                    }
+              });
+        }
+    });
+});
 
 module.exports = router;
